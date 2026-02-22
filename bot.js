@@ -1,3 +1,4 @@
+// ================= IMPORTS =================
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
 const P = require("pino")
 const QRCode = require("qrcode")
@@ -6,38 +7,41 @@ const XLSX = require("xlsx")
 const PDFDocument = require("pdfkit")
 
 // ================= CONFIG =================
-const PLANILHA = "registros.xlsx"
-const BACKUP_DIR = "backup"
-if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR)
+const OWNER = "5541988972311@s.whatsapp.net"
+let prof = "mattheus"
+let escola = "anesio"
 
-// ================= PLANILHA =================
-function garantirPlanilha() {
-    if (!fs.existsSync(PLANILHA)) {
+// ================= UTIL =================
+function dir(path) {
+    if (!fs.existsSync(path)) fs.mkdirSync(path, { recursive: true })
+}
+
+function caminho(tipo) {
+    const base = `dados/${prof}/${escola}`
+    dir(base)
+    return `${base}/${tipo}.xlsx`
+}
+
+function ler(file) {
+    if (!fs.existsSync(file)) {
         const wb = XLSX.utils.book_new()
         const ws = XLSX.utils.json_to_sheet([])
         XLSX.utils.book_append_sheet(wb, ws, "Dados")
-        XLSX.writeFile(wb, PLANILHA)
+        XLSX.writeFile(wb, file)
     }
+    const wb = XLSX.readFile(file)
+    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])
 }
 
-function lerPlanilha() {
-    garantirPlanilha()
-    const workbook = XLSX.readFile(PLANILHA)
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    return XLSX.utils.sheet_to_json(sheet)
-}
-
-function salvarPlanilha(dados) {
+function salvar(file, dados) {
     const ws = XLSX.utils.json_to_sheet(dados)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Dados")
-    XLSX.writeFile(wb, PLANILHA)
+    XLSX.writeFile(wb, file)
 }
 
-function backupAutomatico() {
-    const data = new Date().toISOString().replace(/[:.]/g, "-")
-    const backupFile = `${BACKUP_DIR}/backup-${data}.xlsx`
-    fs.copyFileSync(PLANILHA, backupFile)
+function hoje() {
+    return new Date().toLocaleDateString()
 }
 
 // ================= BOT =================
@@ -55,13 +59,8 @@ async function startBot() {
     sock.ev.on("creds.update", saveCreds)
 
     sock.ev.on("connection.update", async ({ connection, qr }) => {
-        if (qr) {
-            const qrBase64 = await QRCode.toDataURL(qr)
-            console.log("\nAbra no navegador:\n")
-            console.log(qrBase64)
-        }
-
-        if (connection === "open") console.log("BOT ONLINE 🚀")
+        if (qr) console.log(await QRCode.toDataURL(qr))
+        if (connection === "open") console.log("Sistema Escolar V1 ONLINE")
         if (connection === "close") startBot()
     })
 
@@ -69,149 +68,92 @@ async function startBot() {
 
         const msg = messages[0]
         if (!msg.message) return
+        if (msg.key.remoteJid !== OWNER) return
 
-        const from = msg.key.remoteJid
         const text =
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
             ""
 
-        const command = text.toLowerCase().trim()
+        if (!text.startsWith("!")) return
 
-        if (!command.startsWith("!")) return
+        const p = text.split(" ")
 
-        // ================= ADD =================
-        if (command.startsWith("!add")) {
+        // ===== PERFIL =====
+        if (p[0] === "!prof") {
+            prof = p[1]
+            return sock.sendMessage(OWNER, { text: `Professor ativo: ${prof}` })
+        }
 
-            const partes = text.split(" ")
+        // ===== ESCOLA =====
+        if (p[0] === "!escola") {
+            escola = p[1]
+            return sock.sendMessage(OWNER, { text: `Escola ativa: ${escola}` })
+        }
 
-            if (partes.length < 4)
-                return await sock.sendMessage(from, { text: "Use: !add Nome Valor Observacao" })
+        const acad = caminho("academico")
+        const disc = caminho("disciplinar")
 
-            const nome = partes[1]
-            const valor = partes[2]
-            const obs = partes.slice(3).join(" ")
-
-            const dados = lerPlanilha()
-
+        // ===== PRESENÇA =====
+        if (p[0] === "!presente" || p[0] === "!falta") {
+            const dados = ler(acad)
             dados.push({
-                ID: Date.now(),
-                Nome: nome,
-                Valor: valor,
-                Observacao: obs,
-                Data: new Date().toLocaleString()
+                Data: hoje(),
+                Serie: p[1],
+                Aluno: p.slice(2).join(" "),
+                Presenca: p[0] === "!presente" ? "✔" : "❌",
+                Tarefa: "",
+                Conteudo: "",
+                Obs: ""
             })
-
-            salvarPlanilha(dados)
-            backupAutomatico()
-
-            await sock.sendMessage(from, { text: "✅ Registro adicionado!" })
+            salvar(acad, dados)
+            return sock.sendMessage(OWNER, { text: "Presença registrada" })
         }
 
-        // ================= LISTA =================
-        else if (command === "!lista") {
-
-            const dados = lerPlanilha()
-            if (dados.length === 0)
-                return await sock.sendMessage(from, { text: "Nenhum registro." })
-
-            let txt = "📊 REGISTROS:\n\n"
-
-            dados.slice(-10).forEach(d => {
-                txt += `ID:${d.ID}\n${d.Nome} - ${d.Valor}\n${d.Observacao}\n\n`
+        // ===== TAREFA =====
+        if (p[0] === "!fez" || p[0] === "!naofez") {
+            const dados = ler(acad)
+            dados.push({
+                Data: hoje(),
+                Serie: p[1],
+                Aluno: p.slice(2).join(" "),
+                Presenca: "",
+                Tarefa: p[0] === "!fez" ? "✔" : "❌",
+                Conteudo: "",
+                Obs: ""
             })
-
-            await sock.sendMessage(from, { text: txt })
+            salvar(acad, dados)
+            return sock.sendMessage(OWNER, { text: "Tarefa registrada" })
         }
 
-        // ================= BUSCAR =================
-        else if (command.startsWith("!buscar")) {
-
-            const nome = text.replace("!buscar", "").trim()
-            const dados = lerPlanilha()
-            const resultados = dados.filter(d => d.Nome.toLowerCase().includes(nome.toLowerCase()))
-
-            if (resultados.length === 0)
-                return await sock.sendMessage(from, { text: "Nada encontrado." })
-
-            let txt = "🔎 RESULTADOS:\n\n"
-
-            resultados.forEach(d => {
-                txt += `ID:${d.ID}\n${d.Nome} - ${d.Valor}\n${d.Observacao}\n\n`
+        // ===== CONTEÚDO =====
+        if (p[0] === "!conteudo") {
+            const dados = ler(acad)
+            dados.push({
+                Data: hoje(),
+                Serie: "",
+                Aluno: "",
+                Presenca: "",
+                Tarefa: "",
+                Conteudo: p.slice(1).join(" "),
+                Obs: ""
             })
-
-            await sock.sendMessage(from, { text: txt })
+            salvar(acad, dados)
+            return sock.sendMessage(OWNER, { text: "Conteúdo registrado" })
         }
 
-        // ================= DEL =================
-        else if (command.startsWith("!del")) {
-
-            const id = text.replace("!del", "").trim()
-            let dados = lerPlanilha()
-            dados = dados.filter(d => d.ID != id)
-
-            salvarPlanilha(dados)
-            backupAutomatico()
-
-            await sock.sendMessage(from, { text: "🗑 Registro removido!" })
-        }
-
-        // ================= BACKUP =================
-        else if (command === "!backup") {
-
-            garantirPlanilha()
-
-            await sock.sendMessage(from, {
-                document: fs.readFileSync(PLANILHA),
-                mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                fileName: "backup-registros.xlsx"
+        // ===== DISCIPLINAR =====
+        if (p[0] === "!disciplina") {
+            const dados = ler(disc)
+            dados.push({
+                Data: hoje(),
+                Serie: p[1],
+                Aluno: p[2],
+                Tipo: p[3],
+                Descricao: p.slice(4).join(" ")
             })
-        }
-
-        // ================= RELATORIO =================
-        else if (command === "!relatorio") {
-
-            const dados = lerPlanilha()
-            let total = 0
-
-            dados.forEach(d => total += Number(d.Valor) || 0)
-
-            const resumo = `📊 RELATÓRIO\n\nTotal Registros: ${dados.length}\nTotal Valores: ${total}`
-
-            await sock.sendMessage(from, { text: resumo })
-        }
-
-        // ================= PDF =================
-        else if (command === "!pdf") {
-
-            const dados = lerPlanilha()
-
-            const doc = new PDFDocument()
-            const pdfPath = "relatorio.pdf"
-            const stream = fs.createWriteStream(pdfPath)
-
-            doc.pipe(stream)
-
-            doc.fontSize(18).text("RELATÓRIO", { align: "center" })
-            doc.moveDown()
-
-            dados.forEach(d => {
-                doc.fontSize(12).text(`ID: ${d.ID}`)
-                doc.text(`Nome: ${d.Nome}`)
-                doc.text(`Valor: ${d.Valor}`)
-                doc.text(`Obs: ${d.Observacao}`)
-                doc.moveDown()
-            })
-
-            doc.end()
-
-            stream.on("finish", async () => {
-                await sock.sendMessage(from, {
-                    document: fs.readFileSync(pdfPath),
-                    mimetype: "application/pdf",
-                    fileName: "relatorio.pdf"
-                })
-            })
+            salvar(disc, dados)
+            return sock.sendMessage(OWNER, { text: "Registro disciplinar salvo" })
         }
 
     })
