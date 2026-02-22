@@ -1,37 +1,46 @@
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, downloadContentFromMessage } = require("@whiskeysockets/baileys")
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
 const P = require("pino")
 const QRCode = require("qrcode")
 const fs = require("fs")
+const XLSX = require("xlsx")
+const PDFDocument = require("pdfkit")
 
 // ================= CONFIG =================
-const DB_FILE = "database.json"
-const ADM_FILE = "admins.json"
+const PLANILHA = "registros.xlsx"
+const BACKUP_DIR = "backup"
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR)
 
-function loadDB() {
-    if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "{}")
-    return JSON.parse(fs.readFileSync(DB_FILE))
+// ================= PLANILHA =================
+function garantirPlanilha() {
+    if (!fs.existsSync(PLANILHA)) {
+        const wb = XLSX.utils.book_new()
+        const ws = XLSX.utils.json_to_sheet([])
+        XLSX.utils.book_append_sheet(wb, ws, "Dados")
+        XLSX.writeFile(wb, PLANILHA)
+    }
 }
 
-function saveDB(db) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
+function lerPlanilha() {
+    garantirPlanilha()
+    const workbook = XLSX.readFile(PLANILHA)
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    return XLSX.utils.sheet_to_json(sheet)
 }
 
-function getUser(db, id) {
-    if (!db[id]) db[id] = { coins: 100, wins: 0, msgs: 0 }
-    return db[id]
+function salvarPlanilha(dados) {
+    const ws = XLSX.utils.json_to_sheet(dados)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Dados")
+    XLSX.writeFile(wb, PLANILHA)
 }
 
-function isAdmin(id) {
-    if (!fs.existsSync(ADM_FILE)) return false
-    const admins = JSON.parse(fs.readFileSync(ADM_FILE))
-    return admins.includes(id.replace("@s.whatsapp.net", ""))
+function backupAutomatico() {
+    const data = new Date().toISOString().replace(/[:.]/g, "-")
+    const backupFile = `${BACKUP_DIR}/backup-${data}.xlsx`
+    fs.copyFileSync(PLANILHA, backupFile)
 }
 
-const jogosForca = {}
-const palavras = ["javascript", "railway", "whatsapp", "nodejs", "bot"]
-
-const spamControl = {}
-
+// ================= BOT =================
 async function startBot() {
 
     const { state, saveCreds } = await useMultiFileAuthState("auth")
@@ -46,7 +55,6 @@ async function startBot() {
     sock.ev.on("creds.update", saveCreds)
 
     sock.ev.on("connection.update", async ({ connection, qr }) => {
-
         if (qr) {
             const qrBase64 = await QRCode.toDataURL(qr)
             console.log("\nAbra no navegador:\n")
@@ -63,8 +71,6 @@ async function startBot() {
         if (!msg.message) return
 
         const from = msg.key.remoteJid
-        const sender = msg.key.participant || msg.key.remoteJid
-
         const text =
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
@@ -72,158 +78,142 @@ async function startBot() {
 
         const command = text.toLowerCase().trim()
 
-        // 🔕 SOMENTE COMANDOS
         if (!command.startsWith("!")) return
 
-        // 🛡 ANTISPAM
-        if (!spamControl[sender]) spamControl[sender] = 0
-        spamControl[sender]++
-        if (spamControl[sender] > 6) {
-            await sock.sendMessage(from, { text: "⚠️ Anti-spam ativo. Aguarde..." })
-            setTimeout(() => spamControl[sender] = 0, 5000)
-            return
-        }
+        // ================= ADD =================
+        if (command.startsWith("!add")) {
 
-        const db = loadDB()
-        const user = getUser(db, sender)
-        user.msgs++
+            const partes = text.split(" ")
 
-        // ================= MENU =================
-        if (command === "!menu") {
-            await sock.sendMessage(from, {
-                text:
-`🤖 MENU
+            if (partes.length < 4)
+                return await sock.sendMessage(from, { text: "Use: !add Nome Valor Observacao" })
 
-💰 !saldo
-🏆 !top
+            const nome = partes[1]
+            const valor = partes[2]
+            const obs = partes.slice(3).join(" ")
 
-🎮 !forca
-🎲 !roleta 10
+            const dados = lerPlanilha()
 
-🖼 !sticker
-
-👑 !addcoins 100`
+            dados.push({
+                ID: Date.now(),
+                Nome: nome,
+                Valor: valor,
+                Observacao: obs,
+                Data: new Date().toLocaleString()
             })
+
+            salvarPlanilha(dados)
+            backupAutomatico()
+
+            await sock.sendMessage(from, { text: "✅ Registro adicionado!" })
         }
 
-        // ================= SALDO =================
-        else if (command === "!saldo") {
-            await sock.sendMessage(from, { text: `💰 Saldo: ${user.coins} moedas` })
-        }
+        // ================= LISTA =================
+        else if (command === "!lista") {
 
-        // ================= RANKING =================
-        else if (command === "!top") {
+            const dados = lerPlanilha()
+            if (dados.length === 0)
+                return await sock.sendMessage(from, { text: "Nenhum registro." })
 
-            const ranking = Object.entries(db)
-                .sort((a, b) => b[1].coins - a[1].coins)
-                .slice(0, 5)
+            let txt = "📊 REGISTROS:\n\n"
 
-            let txt = "🏆 TOP JOGADORES\n\n"
-
-            ranking.forEach((u, i) => {
-                txt += `${i + 1}º — ${u[1].coins} moedas\n`
+            dados.slice(-10).forEach(d => {
+                txt += `ID:${d.ID}\n${d.Nome} - ${d.Valor}\n${d.Observacao}\n\n`
             })
 
             await sock.sendMessage(from, { text: txt })
         }
 
-        // ================= ROLETA =================
-        else if (command.startsWith("!roleta")) {
+        // ================= BUSCAR =================
+        else if (command.startsWith("!buscar")) {
 
-            const valor = parseInt(command.split(" ")[1])
-            if (!valor || valor <= 0)
-                return await sock.sendMessage(from, { text: "Use: !roleta 10" })
+            const nome = text.replace("!buscar", "").trim()
+            const dados = lerPlanilha()
+            const resultados = dados.filter(d => d.Nome.toLowerCase().includes(nome.toLowerCase()))
 
-            if (user.coins < valor)
-                return await sock.sendMessage(from, { text: "❌ Saldo insuficiente" })
+            if (resultados.length === 0)
+                return await sock.sendMessage(from, { text: "Nada encontrado." })
 
-            const tiro = Math.floor(Math.random() * 6)
+            let txt = "🔎 RESULTADOS:\n\n"
 
-            if (tiro === 0) {
-                user.coins -= valor
-                await sock.sendMessage(from, { text: `💀 BANG! Perdeu ${valor}` })
-            } else {
-                user.coins += valor
-                user.wins++
-                await sock.sendMessage(from, { text: `😎 Sobreviveu! Ganhou ${valor}` })
-            }
+            resultados.forEach(d => {
+                txt += `ID:${d.ID}\n${d.Nome} - ${d.Valor}\n${d.Observacao}\n\n`
+            })
+
+            await sock.sendMessage(from, { text: txt })
         }
 
-        // ================= FORCA =================
-        else if (command === "!forca") {
+        // ================= DEL =================
+        else if (command.startsWith("!del")) {
 
-            const palavra = palavras[Math.floor(Math.random() * palavras.length)]
+            const id = text.replace("!del", "").trim()
+            let dados = lerPlanilha()
+            dados = dados.filter(d => d.ID != id)
 
-            jogosForca[sender] = {
-                palavra,
-                letras: [],
-                erros: 0
-            }
+            salvarPlanilha(dados)
+            backupAutomatico()
+
+            await sock.sendMessage(from, { text: "🗑 Registro removido!" })
+        }
+
+        // ================= BACKUP =================
+        else if (command === "!backup") {
+
+            garantirPlanilha()
 
             await sock.sendMessage(from, {
-                text: `🎮 FORCA\n\n${"_ ".repeat(palavra.length)}`
+                document: fs.readFileSync(PLANILHA),
+                mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                fileName: "backup-registros.xlsx"
             })
         }
 
-        else if (jogosForca[sender] && command.length === 2) {
+        // ================= RELATORIO =================
+        else if (command === "!relatorio") {
 
-            const jogo = jogosForca[sender]
-            const letra = command.replace("!", "")
+            const dados = lerPlanilha()
+            let total = 0
 
-            if (!jogo.palavra.includes(letra)) jogo.erros++
-            else jogo.letras.push(letra)
+            dados.forEach(d => total += Number(d.Valor) || 0)
 
-            let exibicao = ""
-            for (let l of jogo.palavra) {
-                exibicao += jogo.letras.includes(l) ? l + " " : "_ "
-            }
+            const resumo = `📊 RELATÓRIO\n\nTotal Registros: ${dados.length}\nTotal Valores: ${total}`
 
-            if (!exibicao.includes("_")) {
-                user.coins += 20
-                await sock.sendMessage(from, { text: `🏆 Venceu! +20 moedas\nPalavra: ${jogo.palavra}` })
-                delete jogosForca[sender]
-            }
-
-            else if (jogo.erros >= 6) {
-                await sock.sendMessage(from, { text: `💀 Perdeu! Palavra: ${jogo.palavra}` })
-                delete jogosForca[sender]
-            }
-
-            else {
-                await sock.sendMessage(from, { text: `🎮 ${exibicao}\nErros: ${jogo.erros}/6` })
-            }
+            await sock.sendMessage(from, { text: resumo })
         }
 
-        // ================= STICKER =================
-        else if (command === "!sticker") {
+        // ================= PDF =================
+        else if (command === "!pdf") {
 
-            let imageMessage =
-                msg.message.imageMessage ||
-                msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage
+            const dados = lerPlanilha()
 
-            if (!imageMessage)
-                return await sock.sendMessage(from, { text: "Envie ou responda uma imagem com !sticker" })
+            const doc = new PDFDocument()
+            const pdfPath = "relatorio.pdf"
+            const stream = fs.createWriteStream(pdfPath)
 
-            const stream = await downloadContentFromMessage(imageMessage, "image")
+            doc.pipe(stream)
 
-            let buffer = Buffer.from([])
-            for await (const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk])
-            }
+            doc.fontSize(18).text("RELATÓRIO", { align: "center" })
+            doc.moveDown()
 
-            await sock.sendMessage(from, { sticker: buffer })
+            dados.forEach(d => {
+                doc.fontSize(12).text(`ID: ${d.ID}`)
+                doc.text(`Nome: ${d.Nome}`)
+                doc.text(`Valor: ${d.Valor}`)
+                doc.text(`Obs: ${d.Observacao}`)
+                doc.moveDown()
+            })
+
+            doc.end()
+
+            stream.on("finish", async () => {
+                await sock.sendMessage(from, {
+                    document: fs.readFileSync(pdfPath),
+                    mimetype: "application/pdf",
+                    fileName: "relatorio.pdf"
+                })
+            })
         }
 
-        // ================= ADMIN =================
-        else if (command.startsWith("!addcoins") && isAdmin(sender)) {
-
-            const valor = parseInt(command.split(" ")[1]) || 100
-            user.coins += valor
-
-            await sock.sendMessage(from, { text: `👑 Admin adicionou ${valor} moedas` })
-        }
-
-        saveDB(db)
     })
 }
 
