@@ -164,12 +164,12 @@ if (!sender.includes("5541988972311")) return
 
         if (p[0] === "!prof") {
             prof = p[1]
-            return sock.sendMessage(OWNER, { text: `Professor ativo: ${prof}` })
+            return sock.sendMessage(msg.key.remoteJid, { text: `Professor ativo: ${prof}` })
         }
 
         if (p[0] === "!escola") {
             escola = p[1]
-            return sock.sendMessage(OWNER, { text: `Escola ativa: ${escola}` })
+            return sock.sendMessage(msg.key.remoteJid, { text: `Escola ativa: ${escola}` })
         }
 
         const acad = caminho("academico")
@@ -194,14 +194,14 @@ if (!sender.includes("5541988972311")) return
             if (p[0] === "!naofez") reg.Tarefa = "❌"
 
             salvar(acad, dados)
-            return sock.sendMessage(OWNER, { text: "Registro atualizado" })
+            return sock.sendMessage(msg.key.remoteJid, { text: "Registro atualizado" })
         }
 
         if (p[0] === "!conteudo") {
             const dados = ler(acad)
             dados.push({ Data: hoje(), Serie: "", Aluno: "", Presenca: "", Tarefa: "", Conteudo: p.slice(1).join(" ") })
             salvar(acad, dados)
-            return sock.sendMessage(OWNER, { text: "Conteúdo registrado" })
+            return sock.sendMessage(msg.key.remoteJid, { text: "Conteúdo registrado" })
         }
 
         if (p[0] === "!disciplina") {
@@ -214,12 +214,12 @@ if (!sender.includes("5541988972311")) return
                 Descricao: p.slice(4).join(" ")
             })
             salvar(disc, dados)
-            return sock.sendMessage(OWNER, { text: "Registro disciplinar salvo" })
+            return sock.sendMessage(msg.key.remoteJid, { text: "Registro disciplinar salvo" })
         }
 
         if (p[0] === "!pdfdia") {
             const path = gerarPDFDia(acad, disc)
-            return sock.sendMessage(OWNER, {
+            return sock.sendMessage(msg.key.remoteJid, {
                 document: fs.readFileSync(path),
                 mimetype: "application/pdf",
                 fileName: path
@@ -228,7 +228,7 @@ if (!sender.includes("5541988972311")) return
 
         if (p[0] === "!pdfaluno") {
             const path = gerarPDFAluno(acad, disc, p[1], p.slice(2).join(" "))
-            return sock.sendMessage(OWNER, {
+            return sock.sendMessage(msg.key.remoteJid, {
                 document: fs.readFileSync(path),
                 mimetype: "application/pdf",
                 fileName: path
@@ -236,7 +236,7 @@ if (!sender.includes("5541988972311")) return
         }
 
         if (p[0] === "!backup") {
-            return sock.sendMessage(OWNER, {
+            return sock.sendMessage(msg.key.remoteJid, {
                 document: fs.readFileSync(acad),
                 mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 fileName: "academico.xlsx"
