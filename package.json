@@ -1,6 +1,6 @@
 {
-  "name": "whatsapp-bot",
-  "version": "1.0.0",
+  "name": "whatsapp-bot-planilha-pro",
+  "version": "4.0.0",
   "main": "bot.js",
   "type": "commonjs",
   "scripts": {
@@ -9,6 +9,8 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.7",
     "pino": "^8.0.0",
-    "qrcode": "^1.5.3"
+    "qrcode": "^1.5.3",
+    "xlsx": "^0.18.5",
+    "pdfkit": "^0.14.0"
   }
 }
