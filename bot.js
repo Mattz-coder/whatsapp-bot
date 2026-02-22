@@ -1,8 +1,9 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys")
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
 const P = require("pino")
 const fs = require("fs")
+const qrcode = require("qrcode-terminal")
 
-const dono = "554188972311@s.whatsapp.net"
+const dono = "55SEUNUMEROAQUI@s.whatsapp.net"
 
 let antilink = false
 let forca = null
@@ -10,9 +11,7 @@ let forca = null
 const saldoFile = "./saldo.json"
 
 function carregarSaldo() {
-    if (!fs.existsSync(saldoFile)) {
-        fs.writeFileSync(saldoFile, JSON.stringify({}))
-    }
+    if (!fs.existsSync(saldoFile)) fs.writeFileSync(saldoFile, JSON.stringify({}))
     return JSON.parse(fs.readFileSync(saldoFile))
 }
 
@@ -24,18 +23,31 @@ let saldo = carregarSaldo()
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("auth")
+    const { version } = await fetchLatestBaileysVersion()
 
     const sock = makeWASocket({
+        version,
         auth: state,
-        logger: P({ level: "silent" }),
-        printQRInTerminal: true
+        logger: P({ level: "silent" })
     })
 
     sock.ev.on("creds.update", saveCreds)
 
-    sock.ev.on("connection.update", ({ connection }) => {
+    sock.ev.on("connection.update", async (update) => {
+        const { connection, qr } = update
+
+        if (qr) {
+            console.log("\n📱 ESCANEIE O QR ABAIXO:\n")
+            qrcode.generate(qr, { small: true })
+        }
+
         if (connection === "open") {
-            console.log("🤖 BOT ONLINE")
+            console.log("🤖 BOT ONLINE 24H")
+        }
+
+        if (connection === "close") {
+            console.log("🔄 Reconectando...")
+            startBot()
         }
     })
 
@@ -62,13 +74,10 @@ async function startBot() {
                 text: `🤖 MENU
 
 🎮 Jogos
-!forca iniciar
 !saldo
 !apostar valor
 
 🛡️ Moderação
-!ban @membro
-!kick @membro
 !antilink on/off`
             })
         }
@@ -101,5 +110,5 @@ async function startBot() {
 
 startBot()
 
-// 🔥 IMPEDIR RAILWAY DE FINALIZAR PROCESSO
+// impede Railway de encerrar
 setInterval(() => {}, 1000)
