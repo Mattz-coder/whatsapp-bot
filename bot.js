@@ -7,7 +7,7 @@ const XLSX = require("xlsx")
 const PDFDocument = require("pdfkit")
 
 // ================= CONFIG =================
-const OWNER = "5541988972311@s.whatsapp.net"
+const DONO_NUMERO = "5541988972311"
 let prof = "mattheus"
 let escola = "anesio"
 
@@ -141,42 +141,46 @@ async function startBot() {
 
     sock.ev.on("connection.update", async ({ connection, qr }) => {
         if (qr) console.log(await QRCode.toDataURL(qr))
-        if (connection === "open") console.log("Sistema Escolar V2 ONLINE")
+        if (connection === "open") console.log("Sistema Escolar V3 ONLINE")
         if (connection === "close") startBot()
     })
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
-        console.log("MSG RAW:", JSON.stringify(messages, null, 2))
 
         const msg = messages[0]
         if (!msg.message) return
-    const sender = msg.key.participant || msg.key.remoteJid
+        if (msg.message.protocolMessage) return
 
-if (!sender.includes("5541988972311")) return
+        const jid = msg.key.remoteJid || ""
+        if (!jid.includes(DONO_NUMERO)) return
+
+        const m = msg.message || {}
 
         const text =
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
+            m.conversation ||
+            m.extendedTextMessage?.text ||
+            m.ephemeralMessage?.message?.conversation ||
+            m.ephemeralMessage?.message?.extendedTextMessage?.text ||
+            m.imageMessage?.caption ||
             ""
 
-        if (!text.startsWith("!")) return
+        if (!text || !text.startsWith("!")) return
 
-        const p = text.split(" ")
+        const p = text.trim().split(" ")
 
         if (p[0] === "!prof") {
             prof = p[1]
-            return sock.sendMessage(msg.key.remoteJid, { text: `Professor ativo: ${prof}` })
+            return sock.sendMessage(jid, { text: `Professor ativo: ${prof}` })
         }
 
         if (p[0] === "!escola") {
             escola = p[1]
-            return sock.sendMessage(msg.key.remoteJid, { text: `Escola ativa: ${escola}` })
+            return sock.sendMessage(jid, { text: `Escola ativa: ${escola}` })
         }
 
         const acad = caminho("academico")
         const disc = caminho("disciplinar")
 
-        // ===== PRESENÇA / TAREFA MESMA LINHA =====
         if (["!presente","!falta","!fez","!naofez"].includes(p[0])) {
 
             const serie = p[1]
@@ -195,14 +199,14 @@ if (!sender.includes("5541988972311")) return
             if (p[0] === "!naofez") reg.Tarefa = "❌"
 
             salvar(acad, dados)
-            return sock.sendMessage(msg.key.remoteJid, { text: "Registro atualizado" })
+            return sock.sendMessage(jid, { text: "Registro atualizado" })
         }
 
         if (p[0] === "!conteudo") {
             const dados = ler(acad)
             dados.push({ Data: hoje(), Serie: "", Aluno: "", Presenca: "", Tarefa: "", Conteudo: p.slice(1).join(" ") })
             salvar(acad, dados)
-            return sock.sendMessage(msg.key.remoteJid, { text: "Conteúdo registrado" })
+            return sock.sendMessage(jid, { text: "Conteúdo registrado" })
         }
 
         if (p[0] === "!disciplina") {
@@ -215,12 +219,12 @@ if (!sender.includes("5541988972311")) return
                 Descricao: p.slice(4).join(" ")
             })
             salvar(disc, dados)
-            return sock.sendMessage(msg.key.remoteJid, { text: "Registro disciplinar salvo" })
+            return sock.sendMessage(jid, { text: "Registro disciplinar salvo" })
         }
 
         if (p[0] === "!pdfdia") {
             const path = gerarPDFDia(acad, disc)
-            return sock.sendMessage(msg.key.remoteJid, {
+            return sock.sendMessage(jid, {
                 document: fs.readFileSync(path),
                 mimetype: "application/pdf",
                 fileName: path
@@ -229,7 +233,7 @@ if (!sender.includes("5541988972311")) return
 
         if (p[0] === "!pdfaluno") {
             const path = gerarPDFAluno(acad, disc, p[1], p.slice(2).join(" "))
-            return sock.sendMessage(msg.key.remoteJid, {
+            return sock.sendMessage(jid, {
                 document: fs.readFileSync(path),
                 mimetype: "application/pdf",
                 fileName: path
@@ -237,7 +241,7 @@ if (!sender.includes("5541988972311")) return
         }
 
         if (p[0] === "!backup") {
-            return sock.sendMessage(msg.key.remoteJid, {
+            return sock.sendMessage(jid, {
                 document: fs.readFileSync(acad),
                 mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 fileName: "academico.xlsx"
