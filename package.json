@@ -1,6 +1,6 @@
 {
-  "name": "whatsapp-bot-planilha-pro",
-  "version": "4.0.0",
+  "name": "sistema-escolar-whatsapp",
+  "version": "1.0.0",
   "main": "bot.js",
   "type": "commonjs",
   "scripts": {
