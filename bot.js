@@ -149,7 +149,9 @@ async function startBot() {
 
         const msg = messages[0]
         if (!msg.message) return
-        if (msg.key.remoteJid !== OWNER) return
+    const sender = msg.key.participant || msg.key.remoteJid
+
+if (!sender.includes("5541988972311")) return
 
         const text =
             msg.message.conversation ||
