@@ -44,6 +44,87 @@ function hoje() {
     return new Date().toLocaleDateString()
 }
 
+function getRegistroDia(dados, serie, aluno) {
+    return dados.find(d => d.Data === hoje() && d.Serie === serie && d.Aluno === aluno)
+}
+
+// ================= PDF DIA =================
+function gerarPDFDia(acad, disc) {
+    const dadosA = ler(acad).filter(d => d.Data === hoje())
+    const dadosD = ler(disc).filter(d => d.Data === hoje())
+
+    const path = `pdf-dia-${Date.now()}.pdf`
+    const doc = new PDFDocument()
+    doc.pipe(fs.createWriteStream(path))
+
+    doc.fontSize(14).text(`Professor: ${prof}`)
+    doc.text(`Escola: ${escola}`)
+    doc.text(`Data: ${hoje()}`)
+    doc.moveDown()
+
+    dadosA.forEach(d => {
+        doc.text(`${d.Serie} - ${d.Aluno}`)
+        doc.text(`Presença: ${d.Presenca} | Tarefa: ${d.Tarefa}`)
+        if (d.Conteudo) doc.text(`Conteúdo: ${d.Conteudo}`)
+        doc.moveDown()
+    })
+
+    if (dadosD.length) {
+        doc.addPage()
+        doc.text("REGISTROS DISCIPLINARES")
+        doc.moveDown()
+        dadosD.forEach(d => {
+            doc.text(`${d.Serie} ${d.Aluno} - ${d.Tipo}`)
+            doc.text(d.Descricao)
+            doc.moveDown()
+        })
+    }
+
+    doc.end()
+    return path
+}
+
+// ================= PDF ALUNO =================
+function gerarPDFAluno(acad, disc, serie, aluno) {
+    const dadosA = ler(acad).filter(d => d.Serie === serie && d.Aluno === aluno)
+    const dadosD = ler(disc).filter(d => d.Serie === serie && d.Aluno === aluno)
+
+    const path = `pdf-${aluno}-${Date.now()}.pdf`
+    const doc = new PDFDocument()
+    doc.pipe(fs.createWriteStream(path))
+
+    doc.fontSize(14).text(`Aluno: ${aluno}`)
+    doc.text(`Série: ${serie}`)
+    doc.text(`Professor: ${prof}`)
+    doc.text(`Escola: ${escola}`)
+    doc.moveDown()
+
+    let pres = 0
+    dadosA.forEach(d => {
+        doc.text(`${d.Data} | Presença: ${d.Presenca} | Tarefa: ${d.Tarefa}`)
+        if (d.Conteudo) doc.text(`Conteúdo: ${d.Conteudo}`)
+        doc.moveDown()
+        if (d.Presenca === "✔") pres++
+    })
+
+    const freq = dadosA.length ? ((pres / dadosA.length) * 100).toFixed(1) : 0
+    doc.text(`Frequência: ${freq}%`)
+    doc.moveDown()
+
+    if (dadosD.length) {
+        doc.addPage()
+        doc.text("REGISTRO DISCIPLINAR")
+        dadosD.forEach(d => {
+            doc.text(`${d.Data} - ${d.Tipo}`)
+            doc.text(d.Descricao)
+            doc.moveDown()
+        })
+    }
+
+    doc.end()
+    return path
+}
+
 // ================= BOT =================
 async function startBot() {
 
@@ -60,7 +141,7 @@ async function startBot() {
 
     sock.ev.on("connection.update", async ({ connection, qr }) => {
         if (qr) console.log(await QRCode.toDataURL(qr))
-        if (connection === "open") console.log("Sistema Escolar V1 ONLINE")
+        if (connection === "open") console.log("Sistema Escolar V2 ONLINE")
         if (connection === "close") startBot()
     })
 
@@ -79,13 +160,11 @@ async function startBot() {
 
         const p = text.split(" ")
 
-        // ===== PERFIL =====
         if (p[0] === "!prof") {
             prof = p[1]
             return sock.sendMessage(OWNER, { text: `Professor ativo: ${prof}` })
         }
 
-        // ===== ESCOLA =====
         if (p[0] === "!escola") {
             escola = p[1]
             return sock.sendMessage(OWNER, { text: `Escola ativa: ${escola}` })
@@ -94,55 +173,35 @@ async function startBot() {
         const acad = caminho("academico")
         const disc = caminho("disciplinar")
 
-        // ===== PRESENÇA =====
-        if (p[0] === "!presente" || p[0] === "!falta") {
+        // ===== PRESENÇA / TAREFA MESMA LINHA =====
+        if (["!presente","!falta","!fez","!naofez"].includes(p[0])) {
+
+            const serie = p[1]
+            const aluno = p.slice(2).join(" ")
             const dados = ler(acad)
-            dados.push({
-                Data: hoje(),
-                Serie: p[1],
-                Aluno: p.slice(2).join(" "),
-                Presenca: p[0] === "!presente" ? "✔" : "❌",
-                Tarefa: "",
-                Conteudo: "",
-                Obs: ""
-            })
+
+            let reg = getRegistroDia(dados, serie, aluno)
+            if (!reg) {
+                reg = { Data: hoje(), Serie: serie, Aluno: aluno, Presenca: "", Tarefa: "", Conteudo: "" }
+                dados.push(reg)
+            }
+
+            if (p[0] === "!presente") reg.Presenca = "✔"
+            if (p[0] === "!falta") reg.Presenca = "❌"
+            if (p[0] === "!fez") reg.Tarefa = "✔"
+            if (p[0] === "!naofez") reg.Tarefa = "❌"
+
             salvar(acad, dados)
-            return sock.sendMessage(OWNER, { text: "Presença registrada" })
+            return sock.sendMessage(OWNER, { text: "Registro atualizado" })
         }
 
-        // ===== TAREFA =====
-        if (p[0] === "!fez" || p[0] === "!naofez") {
-            const dados = ler(acad)
-            dados.push({
-                Data: hoje(),
-                Serie: p[1],
-                Aluno: p.slice(2).join(" "),
-                Presenca: "",
-                Tarefa: p[0] === "!fez" ? "✔" : "❌",
-                Conteudo: "",
-                Obs: ""
-            })
-            salvar(acad, dados)
-            return sock.sendMessage(OWNER, { text: "Tarefa registrada" })
-        }
-
-        // ===== CONTEÚDO =====
         if (p[0] === "!conteudo") {
             const dados = ler(acad)
-            dados.push({
-                Data: hoje(),
-                Serie: "",
-                Aluno: "",
-                Presenca: "",
-                Tarefa: "",
-                Conteudo: p.slice(1).join(" "),
-                Obs: ""
-            })
+            dados.push({ Data: hoje(), Serie: "", Aluno: "", Presenca: "", Tarefa: "", Conteudo: p.slice(1).join(" ") })
             salvar(acad, dados)
             return sock.sendMessage(OWNER, { text: "Conteúdo registrado" })
         }
 
-        // ===== DISCIPLINAR =====
         if (p[0] === "!disciplina") {
             const dados = ler(disc)
             dados.push({
@@ -154,6 +213,32 @@ async function startBot() {
             })
             salvar(disc, dados)
             return sock.sendMessage(OWNER, { text: "Registro disciplinar salvo" })
+        }
+
+        if (p[0] === "!pdfdia") {
+            const path = gerarPDFDia(acad, disc)
+            return sock.sendMessage(OWNER, {
+                document: fs.readFileSync(path),
+                mimetype: "application/pdf",
+                fileName: path
+            })
+        }
+
+        if (p[0] === "!pdfaluno") {
+            const path = gerarPDFAluno(acad, disc, p[1], p.slice(2).join(" "))
+            return sock.sendMessage(OWNER, {
+                document: fs.readFileSync(path),
+                mimetype: "application/pdf",
+                fileName: path
+            })
+        }
+
+        if (p[0] === "!backup") {
+            return sock.sendMessage(OWNER, {
+                document: fs.readFileSync(acad),
+                mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                fileName: "academico.xlsx"
+            })
         }
 
     })
