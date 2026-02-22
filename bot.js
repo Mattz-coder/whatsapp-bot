@@ -146,6 +146,7 @@ async function startBot() {
     })
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
+        console.log("MSG RAW:", JSON.stringify(messages, null, 2))
 
         const msg = messages[0]
         if (!msg.message) return
