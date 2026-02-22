@@ -1,7 +1,7 @@
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
 const P = require("pino")
-const fs = require("fs")
 const QRCode = require("qrcode")
+const fs = require("fs")
 
 async function startBot() {
 
@@ -17,16 +17,21 @@ async function startBot() {
     sock.ev.on("creds.update", saveCreds)
 
     sock.ev.on("connection.update", async (update) => {
-        const { connection, qr, lastDisconnect } = update
+        const { connection, qr } = update
 
         if (qr) {
-            console.log("\n📲 Escaneie o QR Code abaixo:\n")
-            const qrImage = await QRCode.toString(qr, { type: "terminal", small: true })
-            console.log(qrImage)
+            console.log("\n📲 Gerando QR Code em imagem...")
+
+            // Gera QR em base64
+            const qrBase64 = await QRCode.toDataURL(qr)
+
+            console.log("\n🔗 COPIE O LINK ABAIXO E ABRA NO NAVEGADOR:\n")
+            console.log(qrBase64)
+            console.log("\n")
         }
 
         if (connection === "open") {
-            console.log("✅ BOT ONLINE 24H 🚀")
+            console.log("✅ BOT ONLINE 🚀")
         }
 
         if (connection === "close") {
@@ -34,10 +39,6 @@ async function startBot() {
             startBot()
         }
     })
-
-    // ===============================
-    // 🎧 OUVIR MENSAGENS
-    // ===============================
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
         try {
@@ -54,45 +55,32 @@ async function startBot() {
 
             console.log("📩 Mensagem:", command)
 
-            // ===============================
-            // 🤖 COMANDO MENU
-            // ===============================
             if (command === "!menu") {
                 await sock.sendMessage(from, {
-                    text:
-`🤖 *MENU PRINCIPAL*
+                    text: `🤖 *MENU*
 
 1️⃣ !ping
-2️⃣ !info
-
-Digite um comando.`
+2️⃣ !info`
                 })
             }
 
-            // ===============================
-            // 🏓 PING
-            // ===============================
             else if (command === "!ping") {
                 await sock.sendMessage(from, { text: "🏓 Pong!" })
             }
 
-            // ===============================
-            // ℹ️ INFO
-            // ===============================
             else if (command === "!info") {
                 await sock.sendMessage(from, {
-                    text: "🤖 Bot ativo no Railway\n⚡ Online 24h\n🚀 Baileys funcionando"
+                    text: "Bot rodando no Railway 🚀"
                 })
             }
 
         } catch (err) {
-            console.log("❌ Erro ao processar mensagem:", err)
+            console.log("Erro:", err)
         }
     })
 }
 
 startBot()
 
-// Anti-crash Railway
 process.on("uncaughtException", console.error)
 process.on("unhandledRejection", console.error)
