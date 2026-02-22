@@ -1,6 +1,34 @@
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
 const P = require("pino")
 const QRCode = require("qrcode")
+const fs = require("fs")
+
+let professor = "mattheus"
+let escola = "anesio"
+
+function pastaBase() {
+    const dir = `dados/${professor}/${escola}`
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    return dir
+}
+
+function arquivo(tipo) {
+    return `${pastaBase()}/${tipo}.json`
+}
+
+function ler(tipo) {
+    const path = arquivo(tipo)
+    if (!fs.existsSync(path)) fs.writeFileSync(path, JSON.stringify([]))
+    return JSON.parse(fs.readFileSync(path))
+}
+
+function salvar(tipo, dados) {
+    fs.writeFileSync(arquivo(tipo), JSON.stringify(dados, null, 2))
+}
+
+function hoje() {
+    return new Date().toLocaleDateString()
+}
 
 async function startBot() {
 
@@ -17,7 +45,7 @@ async function startBot() {
 
     sock.ev.on("connection.update", async ({ connection, qr }) => {
         if (qr) console.log(await QRCode.toDataURL(qr))
-        if (connection === "open") console.log("BOT ONLINE")
+        if (connection === "open") console.log("Sistema Escolar ONLINE")
         if (connection === "close") startBot()
     })
 
@@ -41,12 +69,88 @@ async function startBot() {
 
         console.log("Recebido:", text)
 
-        if (text.startsWith("!")) {
-            await sock.sendMessage(jid, { text: "COMANDO RECEBIDO ✅" })
+        if (!text.startsWith("!")) return
+
+        const p = text.trim().split(" ")
+
+        if (p[0] === "!prof") {
+            professor = p[1]
+            return sock.sendMessage(jid, { text: `Professor ativo: ${professor}` })
+        }
+
+        if (p[0] === "!escola") {
+            escola = p[1]
+            return sock.sendMessage(jid, { text: `Escola ativa: ${escola}` })
+        }
+
+        if (p[0] === "!presente" || p[0] === "!falta") {
+
+            const dados = ler("academico")
+
+            dados.push({
+                data: hoje(),
+                serie: p[1],
+                aluno: p.slice(2).join(" "),
+                presenca: p[0] === "!presente" ? "✔" : "❌",
+                tarefa: "",
+                conteudo: ""
+            })
+
+            salvar("academico", dados)
+            return sock.sendMessage(jid, { text: "Presença registrada" })
+        }
+
+        if (p[0] === "!fez" || p[0] === "!naofez") {
+
+            const dados = ler("academico")
+
+            dados.push({
+                data: hoje(),
+                serie: p[1],
+                aluno: p.slice(2).join(" "),
+                presenca: "",
+                tarefa: p[0] === "!fez" ? "✔" : "❌",
+                conteudo: ""
+            })
+
+            salvar("academico", dados)
+            return sock.sendMessage(jid, { text: "Tarefa registrada" })
+        }
+
+        if (p[0] === "!conteudo") {
+
+            const dados = ler("academico")
+
+            dados.push({
+                data: hoje(),
+                serie: "",
+                aluno: "",
+                presenca: "",
+                tarefa: "",
+                conteudo: p.slice(1).join(" ")
+            })
+
+            salvar("academico", dados)
+            return sock.sendMessage(jid, { text: "Conteúdo registrado" })
+        }
+
+        if (p[0] === "!disciplina") {
+
+            const dados = ler("disciplinar")
+
+            dados.push({
+                data: hoje(),
+                serie: p[1],
+                aluno: p[2],
+                tipo: p[3],
+                descricao: p.slice(4).join(" ")
+            })
+
+            salvar("disciplinar", dados)
+            return sock.sendMessage(jid, { text: "Registro disciplinar salvo" })
         }
 
     })
-
 }
 
 startBot()
