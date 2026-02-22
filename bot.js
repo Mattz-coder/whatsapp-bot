@@ -3,7 +3,7 @@ const P = require("pino")
 const fs = require("fs")
 const QRCode = require("qrcode")
 
-const dono = "55S4188972311@s.whatsapp.net"
+const dono = "55S41988972311@s.whatsapp.net"
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("auth")
